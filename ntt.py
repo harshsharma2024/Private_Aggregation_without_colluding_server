@@ -271,7 +271,7 @@ class aggregator:
 
 
 def test_aggregation():
-    n_g = 512
+    n_g = 512 # Power of 2 for Divide and Conquer
     p_s = 400
 
     # p_s << prime , Must be Condition to avoid Coefficient modulo avoidance
