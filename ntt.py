@@ -204,6 +204,12 @@ class user:
     #   print("Mask for User ID:", self.gid, "is", self.mask)
       return 1
    
+   def send_user_pk(self, obj_aggregator):
+      
+      # Send the public key to the aggregator
+      obj_aggregator.receive_pk(self.pk, self)
+      return 1
+
    def send_aggregator_evaluating_results(self, obj_aggregator):
       if self.mask is None:
           raise ValueError("Mask has not been created yet.")
@@ -237,7 +243,7 @@ class aggregator:
       # Create a list of public keys
       public_keys = [pk for pk, _ in self.received_pk]
 
-      # We need tp parallelize this process of sending public_key list to all users
+      # TODO: We need tp parallelize this process of sending public_key list to all users using mutiple Processes
 
       for i in range(p_s):
           user_obj = self.received_pk[i][1]
@@ -303,14 +309,21 @@ def test_aggregation():
     # Create aggregator
     obj_aggregator = aggregator(n_g, primitive_root, prime)
     # Send public keys to aggregator
+
+    # TODO: Parallelize this process to simulate real network
     for user_obj in users:
-        obj_aggregator.receive_pk(user_obj.pk, user_obj)
+        if(user_obj.send_user_pk(obj_aggregator) != 1):
+            raise ValueError("Public key sending failed.")
     # Send public keys to users
+
+    # TODO: Parallelize this process s.t. Aggregator cna send all users the public keys list at once
     if obj_aggregator.send_pk() != 1:
         raise ValueError("Public key sending failed.")
-    
 
-    # TO check if thge sum of masks is equal to 0
+
+
+    # Extra check for the sum of masks
+    # to check if the sum of masks is equal to 0
     mask = 0
     for i in range(len(users)): 
         mask = (mask + users[i].mask) % prime
@@ -331,7 +344,7 @@ def test_aggregation():
 
     # print("Sum of Value Representation :", ans)
 
-
+    # TODO: Parallelize s.t. users can send the resultant value at once to the aggregator
     for user_obj in users:
         user_obj.send_aggregator_evaluating_results(obj_aggregator)
 

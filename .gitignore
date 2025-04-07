@@ -1,3 +1,9 @@
 *.pdf
 polynomial_resolver.py
 test.py
+user_data_aggregation.py
+.vscode/
+/user_aggregator_simulation/a.out
+/user_aggregator_simulation/aggregator
+/user_aggregator_simulation/user
+# /user_aggregator_simulation/user.cpp
