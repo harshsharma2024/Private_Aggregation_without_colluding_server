@@ -3,7 +3,7 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <cstring>
-
+#include <random>
 using namespace std;
 
 
@@ -71,8 +71,10 @@ string to_string(__int128 x) {
     return result;
 }
 
-#define N_G 8 // Power of 2
-#define P_S 2 // Even number of users at a time
+#define N_G 64 // Power of 2
+#define P_S 100 // Even number of users at a time
+#define PK_LST_SIZE 16384
+#define MAX_PRIME_VAL 99999999999 // Vary depending on the need (N_G)
 
 class PrimeHelper {
     public:
@@ -229,6 +231,7 @@ pair<int128, vector<int128>> extract_pk_list(char* buffer){
     if(!temp.empty()){
         tokens.push_back(temp);
     }
+    cout<<"tokens size: "<<tokens.size()<<endl;
     vector<int128> pk_list;
     if(tokens.size() < 3 || tokens[0] != "pk_list"){
         cout << "Invalid pk list" << endl;
@@ -248,105 +251,213 @@ pair<int128, vector<int128>> extract_pk_list(char* buffer){
     return {index_self_pk, pk_list};
 }
 
-int main() {
+void communicate_with_server(User user) {
     int sockfd;
     sockaddr_in server_addr{};
 
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (sockfd < 0) {
         perror("Socket creation failed");
-        return 1;
+        return;
     }
 
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(8111);
-    inet_pton(AF_INET, "127.0.0.1", &server_addr.sin_addr); // localhost
+    inet_pton(AF_INET, "127.0.0.1", &server_addr.sin_addr);
 
     if (connect(sockfd, (sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
         perror("Connection failed");
-        return 1;
+        return;
     }
 
-    PrimeHelper prime_helper;
-    int128 prime = prime_helper.find_prime_for_polynomial(N_G, 9999999);
-    // int128 prime = 17;
-    int128 primitive_root = prime_helper.find_primitive_nth_root(prime, N_G);
+    string message = "Hello ";
+    message += to_string(user.pk);  // Assuming getter exists
+    send(sockfd, message.c_str(), message.size(), 0);
 
+    char buffer[1024] = {0};
+    int bytes_read = read(sockfd, buffer, sizeof(buffer));
+    std::string reply(buffer, bytes_read);
+    std::cout << "Server reply: " << reply << "\n";
+
+    if (reply != "OK") {
+        cout << "Invalid response" << endl;
+        exit_the_process(sockfd);
+        return;
+    }
+
+    char recv_pk_list[PK_LST_SIZE] = {0};
+    int bytes_read_pk_list = read(sockfd, recv_pk_list, sizeof(recv_pk_list));
+    std::string pk_data(recv_pk_list, bytes_read_pk_list);
+    std::cout << "Received pk list: " << pk_data << "\n";
+
+    auto res_pk_list = extract_pk_list(recv_pk_list);
+    if (res_pk_list.second.empty() || res_pk_list.first == -1) {
+        cout << "Invalid pk list" << endl;
+        exit_the_process(sockfd);
+        return;
+    }
+
+    auto pk_list = res_pk_list.second;
+    int128 p_s = pk_list.size();
+    int128 index_self_pk = res_pk_list.first;
+
+    int stats = user.create_mask(pk_list, p_s, index_self_pk);
+    if (stats != 0) {
+        cout << "Error creating mask" << endl;
+        exit_the_process(sockfd);
+        return;
+    }
+
+    auto masked_values = user.get_masked_value_representation();
+    if (masked_values.empty()) {
+        cout << "Error getting masked values" << endl;
+        exit_the_process(sockfd);
+        return;
+    }
+
+    string value_representation_str = "masked_points " + to_string(masked_values.size());
+    for (auto& val : masked_values) {
+        value_representation_str += " " + to_string(val);
+    }
+
+    send(sockfd, value_representation_str.c_str(), value_representation_str.size(), 0);
+    cout << "Sent masked values to server\n";
+
+    close(sockfd);
+}
+
+int main() {
+    PrimeHelper prime_helper;
+    int128 prime = prime_helper.find_prime_for_polynomial(N_G, MAX_PRIME_VAL);
+    int128 primitive_root = prime_helper.find_primitive_nth_root(prime, N_G);
     cout << "Prime: ";
     print128(prime);
     cout << ", Primitive root: ";
     print128(primitive_root);
     cout << endl;
+    vector<thread> threads;
+    random_device rd;
+    mt19937_64 gen(rd());
+    uniform_int_distribution<int128> dis(0, N_G - 1);
+    uniform_int_distribution<int128> dis2(0, prime - 1);
+    for (int i = 0; i < P_S; i++) {
+        int128 gid = dis(gen);
+        cout<<"GID: ";
+        print128(gid);
+        cout<<endl;
+        int128 sk = dis2(gen); // change sk per user
+        int128 pk = modpow(primitive_root, sk, prime);
+        User user(gid, sk, pk, N_G, primitive_root, prime);
 
-    int128 gid = 5;
-    int128 sk = 28761337619;
-    int128 pk = modpow(primitive_root, sk, prime);
-    User user(gid, sk, pk, N_G, primitive_root, prime);
-
-    string message = "Hello ";
-    message += to_string(pk);
-    send(sockfd, message.c_str(), message.size(), 0);
-    
-    char buffer[1024] = {0};
-    int bytes_read = read(sockfd, buffer, sizeof(buffer));
-    std::cout << "Server reply: " << std::string(buffer, bytes_read) << "\n";
-
-    if(strcmp(buffer, "OK") == 0){
-        cout << "OK received" << endl;
-    } else {
-        cout << "Invalid response" << endl;
-        exit_the_process(sockfd);
-        return 1;
+        threads.emplace_back(communicate_with_server, user);
     }
 
-    char recv_pk_list[1024] = {0};
-    int bytes_read_pk_list = read(sockfd, recv_pk_list, sizeof(recv_pk_list));
-    std::cout << "Received pk list: " << std::string(recv_pk_list, bytes_read_pk_list) << "\n";
-
-    auto res_pk_list = extract_pk_list(recv_pk_list);
-
-    if(res_pk_list.second.size() == 0 || res_pk_list.first == -1){
-        cout << "Invalid pk list" << endl;
-        exit_the_process(sockfd);
-        return 1;
-    }
-    auto pk_list = res_pk_list.second;
-    int128 p_s = pk_list.size();
-    int128 index_self_pk = res_pk_list.first;
-
-    cout<<"Self pk index: ";
-    print128(index_self_pk);
-    cout<<endl;
-
-    int stats = user.create_mask(pk_list, p_s, index_self_pk);
-    if(stats != 0){
-        cout << "Error creating mask" << endl;
-        exit_the_process(sockfd);
-        return 1;
-    }
-    vector<int128> masked_value_representation = user.get_masked_value_representation();
-    if(masked_value_representation.size() == 0){
-        cout << "Error getting masked value representation" << endl;
-        exit_the_process(sockfd);
-        return 1;
+    for (auto& th : threads) {
+        th.join();
     }
 
-    for(int128 i = 0; i < masked_value_representation.size(); i++){
-        cout << "Masked value representation: ";
-        print128(masked_value_representation[i]);
-        cout<< endl;
-    }
-
-    string value_representation_str = "masked_points ";
-    value_representation_str += to_string(masked_value_representation.size());
-    
-    for(int128 i = 0; i < masked_value_representation.size(); i++){
-        value_representation_str += " " + to_string(masked_value_representation[i]);
-    }
-
-    send(sockfd, value_representation_str.c_str(), value_representation_str.size(), 0);
-    cout << "Sent masked value representation to server" << endl;
-
-    close(sockfd);
-    return 0 ;
+    return 0;
 }
+
+// int main() {
+//     int sockfd;
+//     sockaddr_in server_addr{};
+
+//     sockfd = socket(AF_INET, SOCK_STREAM, 0);
+//     if (sockfd < 0) {
+//         perror("Socket creation failed");
+//         return 1;
+//     }
+
+//     server_addr.sin_family = AF_INET;
+//     server_addr.sin_port = htons(8111);
+//     inet_pton(AF_INET, "127.0.0.1", &server_addr.sin_addr); // localhost
+
+//     if (connect(sockfd, (sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+//         perror("Connection failed");
+//         return 1;
+//     }
+
+//     PrimeHelper prime_helper;
+//     int128 prime = prime_helper.find_prime_for_polynomial(N_G, 9999999);
+//     // int128 prime = 17;
+//     int128 primitive_root = prime_helper.find_primitive_nth_root(prime, N_G);
+
+//     cout << "Prime: ";
+//     print128(prime);
+//     cout << ", Primitive root: ";
+//     print128(primitive_root);
+//     cout << endl;
+
+//     int128 gid = 5;
+//     int128 sk = 28761337619;
+//     int128 pk = modpow(primitive_root, sk, prime);
+//     User user(gid, sk, pk, N_G, primitive_root, prime);
+
+//     string message = "Hello ";
+//     message += to_string(pk);
+//     send(sockfd, message.c_str(), message.size(), 0);
+    
+//     char buffer[1024] = {0};
+//     int bytes_read = read(sockfd, buffer, sizeof(buffer));
+//     std::cout << "Server reply: " << std::string(buffer, bytes_read) << "\n";
+
+//     if(strcmp(buffer, "OK") == 0){
+//         cout << "OK received" << endl;
+//     } else {
+//         cout << "Invalid response" << endl;
+//         exit_the_process(sockfd);
+//         return 1;
+//     }
+
+//     char recv_pk_list[1024] = {0};
+//     int bytes_read_pk_list = read(sockfd, recv_pk_list, sizeof(recv_pk_list));
+//     std::cout << "Received pk list: " << std::string(recv_pk_list, bytes_read_pk_list) << "\n";
+
+//     auto res_pk_list = extract_pk_list(recv_pk_list);
+
+//     if(res_pk_list.second.size() == 0 || res_pk_list.first == -1){
+//         cout << "Invalid pk list" << endl;
+//         exit_the_process(sockfd);
+//         return 1;
+//     }
+//     auto pk_list = res_pk_list.second;
+//     int128 p_s = pk_list.size();
+//     int128 index_self_pk = res_pk_list.first;
+
+//     cout<<"Self pk index: ";
+//     print128(index_self_pk);
+//     cout<<endl;
+
+//     int stats = user.create_mask(pk_list, p_s, index_self_pk);
+//     if(stats != 0){
+//         cout << "Error creating mask" << endl;
+//         exit_the_process(sockfd);
+//         return 1;
+//     }
+//     vector<int128> masked_value_representation = user.get_masked_value_representation();
+//     if(masked_value_representation.size() == 0){
+//         cout << "Error getting masked value representation" << endl;
+//         exit_the_process(sockfd);
+//         return 1;
+//     }
+
+//     for(int128 i = 0; i < masked_value_representation.size(); i++){
+//         cout << "Masked value representation: ";
+//         print128(masked_value_representation[i]);
+//         cout<< endl;
+//     }
+
+//     string value_representation_str = "masked_points ";
+//     value_representation_str += to_string(masked_value_representation.size());
+    
+//     for(int128 i = 0; i < masked_value_representation.size(); i++){
+//         value_representation_str += " " + to_string(masked_value_representation[i]);
+//     }
+
+//     send(sockfd, value_representation_str.c_str(), value_representation_str.size(), 0);
+//     cout << "Sent masked value representation to server" << endl;
+
+//     close(sockfd);
+//     return 0 ;
+// }

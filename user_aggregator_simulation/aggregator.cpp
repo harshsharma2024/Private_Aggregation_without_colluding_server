@@ -239,11 +239,12 @@ const string INVALID_STRING = "INVALID";
 const string OK_STRING = "OK";\
 int return_val = 0;
 
-#define p_s 2 // Even number of users at a time
-#define N_G 8 // Power of 2
+#define N_G 64 // Power of 2
+#define P_S 100 // Even number of users at a time
 #define PK_LST_SIZE 16384 // Vary depending on the need (N_G)
-#define Primitive_root 8074753
-#define Prime 9999937
+#define MAX_PRIME_VAL 99999999999 // Vary depending on the need (N_G)
+__int128 Primitive_root = 1165819352762;
+__int128 Prime = 9999999998977;
 
 string to_string(__int128 x) {
     if (x == 0) return "0";
@@ -406,10 +407,20 @@ int public_key_broadcast_n_polynomial_generation(map<__int128, pair<__int128,__i
 
     auto res = ntt.inverse_ntt(evaluation_points, Prime, Primitive_root);
     cout << "Inverse NTT result: ";
+    __int128 sum = 0;
     for (auto val : res) {
+        sum += val;
         print128(val);
         cout << " ";
     }
+    cout<<endl;
+    if(sum == P_S){
+        cout<<"Generated Polynomial verified"<<endl;
+    }
+    else{
+        cout<<"Generated polynomial Sum did not match, some issue!!"<<endl;
+    }
+
     cout << endl;
     cout << "Polynomial generation complete" << endl;
     cout << "Exiting the process..." << endl;
@@ -417,6 +428,11 @@ int public_key_broadcast_n_polynomial_generation(map<__int128, pair<__int128,__i
 }
 
 int main(){
+
+    PrimeHelper prime_helper;
+    Prime = prime_helper.find_prime_for_polynomial(N_G, MAX_PRIME_VAL);
+    Primitive_root = prime_helper.find_primitive_nth_root(Prime, N_G);
+
     __int128 server_fd, max_sd, new_socket;
     sockaddr_in server_addr;
     __int128 addrlen = sizeof(server_addr);
@@ -459,8 +475,8 @@ int main(){
                 max_sd = sd;
         }
         
-        if(client_map.size() == p_s){
-            cout << "p_s (partition size) clients reached, to do the Aggregation" << endl;
+        if(client_map.size() == P_S){
+            cout << "P_S (partition size) clients reached, to do the Aggregation" << endl;
             int stats = public_key_broadcast_n_polynomial_generation(client_map, server_fd);
             if(stats == 0){
                 cout<<"Public key broadcasted and polynomial generation done"<<endl;
@@ -531,7 +547,7 @@ int main(){
                         close(sd);
                         continue;
                     }
-                    client_map[new_socket] = {client_id, t.second};
+                    client_map[sd] = {client_id, t.second};
                     client_id++;
                     cout << "Client ID: ";
                     print128(client_map[sd].first);
