@@ -19,7 +19,7 @@ $(AGGREGATOR_BIN): $(AGGREGATOR_SRC)
 
 # Compile user
 $(USER_BIN): $(USER_SRC)
-	$(CXX) $(CXXFLAGS) -o $@ $^
+	$(CXX) $(CXXFLAGS) -o $@ $^ -lcrypto
 
 # Clean build artifacts
 clean:

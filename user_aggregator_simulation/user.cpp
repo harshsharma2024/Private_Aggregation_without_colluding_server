@@ -5,17 +5,17 @@
 #include <cstring>
 #include <random>
 #include <chrono>
+#include <openssl/evp.h>
 using namespace std::chrono;
 using namespace std;
 
 #define N_G 1024 // Power of 2
-#define P_S 100 // Even number of users at a time
+#define P_S 200 // Even number of users at a time
 #define PK_LST_SIZE 16384
 #define MAX_PRIME_VAL 99999999999 // Vary depending on the need (N_G)
-
-
 using int128 = __int128;
 // Modular exponentiation
+
 __int128 modpow(__int128 base, __int128 exp, __int128 mod) {
     __int128 result = 1;
     base %= mod;
@@ -38,9 +38,56 @@ __int128 str_to_int128(const std::string& s) {
     return result;
 }
 
-int128 PRG(int128 x) {
-    // TODO : Implement a proper Pseudo Random Generator
-    return x;
+void int128_to_bytes(__int128 seed, unsigned char* out) {
+    for (int i = 0; i < 16; ++i) {
+        out[15 - i] = static_cast<unsigned char>(seed & 0xFF);
+        seed >>= 8;
+    }
+}
+
+vector<__int128> PRG(__int128 seed, __int128 prime) {
+    const int bytes_needed = N_G * 16;
+    vector<unsigned char> output(bytes_needed, 0);
+
+    unsigned char key[16];
+    unsigned char iv[16] = {0};
+
+    int128_to_bytes(seed, key);
+
+    EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+
+    if (!ctx) {
+        cerr << "Failed to create EVP context" << endl;
+        exit(1);
+    }
+
+    if (EVP_EncryptInit_ex(ctx, EVP_aes_128_ctr(), NULL, key, iv) != 1) {
+        cerr << "Failed to initialize AES-CTR" << endl;
+        exit(1);
+    }
+
+    int outlen = 0;
+    if (EVP_EncryptUpdate(ctx, output.data(), &outlen, output.data(), bytes_needed) != 1) {
+        cerr << "Encryption failed" << endl;
+        exit(1);
+    }
+
+    EVP_CIPHER_CTX_free(ctx);
+
+    vector<__int128> final_res;
+
+    for (int i = 0; i < N_G; ++i) {
+        __int128 res = 0;
+        for (int j = 0; j < 16; ++j) {
+            res = (res << 8) | output[i * 16 + j];
+        }
+
+        // Ensure non-negative and mod prime
+        if (res < 0) res = -res;
+        final_res.push_back(res % prime);
+    }
+
+    return final_res;
 }
 
 void print128(__int128 x) {
@@ -160,6 +207,7 @@ class User{
         int128 gid;
         int128 sk;
         int128 mask;
+        vector<int128> masked_lst;
     public:
         int128 pk;
         int128 n_g;
@@ -180,22 +228,38 @@ class User{
             cout << "index_self_pk out of bounds" << endl;
             return -1;
         }
+        this->masked_lst.clear();
+        this->masked_lst.resize(this->n_g, 0);
         int128 odd = index_self_pk%2;
         this->mask = 0;
         int128 cnt = 0;
         for(int128 i = 0;i< p_s;i++){
             int128 sign = (odd+cnt+1)%2==0?1:-1;
             if(i != index_self_pk){
-                this->mask = (this->mask + sign*PRG(modpow(pk_list[i], this->sk,this->prime)))% this->prime;
+                auto prg_res =  PRG((modpow(pk_list[i], this->sk,this->prime)), this->prime);
+                for(int128 j = 0;j< this->n_g;j++){
+                    this->masked_lst[j] = (this->masked_lst[j] + sign*prg_res[j])%this->prime;
+                    this->masked_lst[j] = (this->masked_lst[j] + this->prime)%this->prime;
+                }
                 cnt++;
             }
             this->mask = (this->mask + this->prime)%this->prime;
         }
-        cout<< "Mask created: ";
-        // print128(odd);
-        // cout<<" ";
-        print128(this->mask);
-        cout<< endl;
+        // cout<< "Mask created: ";
+        // // print128(odd);
+        // // cout<<" ";
+        // print128(this->mask);
+        // cout<< endl;
+
+        // cout<< "Masked list for ";
+        // print128(gid);
+        // cout<< ": ";
+        // for(int128 i = 0;i< this->n_g;i++){
+        //     print128(this->masked_lst[i]);
+        //     cout<< " ";
+        // }
+        // cout<< endl;
+
         return 0;
     }
 
@@ -207,8 +271,9 @@ class User{
         }
         int128 value_point = 1;
 
+
         for(int128 i = 0;i< this->n_g; i++){
-            masked_value_representation.push_back((this->mask + modpow(value_point,this->gid, this->prime))%this->prime);
+            masked_value_representation.push_back((this->masked_lst[i] + modpow(value_point,this->gid, this->prime))%this->prime);
             value_point = (value_point * this->primitive_root)%this->prime;
         }
 
@@ -290,7 +355,7 @@ void communicate_with_server(User user) {
     char recv_pk_list[PK_LST_SIZE] = {0};
     int bytes_read_pk_list = read(sockfd, recv_pk_list, sizeof(recv_pk_list));
     std::string pk_data(recv_pk_list, bytes_read_pk_list);
-    std::cout << "Received pk list: " << pk_data << "\n";
+    // std::cout << "Received pk list: " << pk_data << "\n";
 
     auto res_pk_list = extract_pk_list(recv_pk_list);
     if (res_pk_list.second.empty() || res_pk_list.first == -1) {

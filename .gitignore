@@ -6,4 +6,5 @@ user_data_aggregation.py
 /user_aggregator_simulation/a.out
 /user_aggregator_simulation/aggregator
 /user_aggregator_simulation/user
-# /user_aggregator_simulation/user.cpp
+/user_aggregator_simulation/test.cpp
+/user_aggregator_simulation/test

@@ -8,6 +8,18 @@
 
 using namespace std;
 
+// Global variables
+const string INVALID_STRING = "INVALID";
+const string OK_STRING = "OK";\
+int return_val = 0;
+
+#define N_G 1024 // Power of 2
+#define P_S 200 // Even number of users at a time
+#define PK_LST_SIZE 16384 // Vary depending on the need (N_G)
+#define MAX_PRIME_VAL 99999999999 // Vary depending on the need (N_G)
+__int128 Primitive_root = 1165819352762;
+__int128 Prime = 9999999998977;
+
 __int128 str_to_int128(const std::string& s) {
     __int128 result = 0;
     for (char c : s) {
@@ -206,13 +218,13 @@ void test(){
     NTT ntt(p, g);
     vector<__int128> ntt_result = ntt.ntt_cooley_tukey(a, p, g);
     vector<__int128> inv_ntt_result = ntt.inverse_ntt(ntt_result, p, g);
-    cout << "Original: ";
-    print128(x);
-    cout << "\nNTT Result: ";
-    for (auto val : ntt_result) {
-        print128(val);
-        cout << " ";
-    }
+    // cout << "Original: ";
+    // print128(x);
+    // cout << "\nNTT Result: ";
+    // for (auto val : ntt_result) {
+    //     print128(val);
+    //     cout << " ";
+    // }
     cout << "\nInverse NTT Result: ";
     for (auto val : inv_ntt_result) {
         print128(val);
@@ -228,23 +240,11 @@ pair<__int128,__int128> process_received_pk(char* buffer){
     string pk_str = s.substr(0, pos);
     if(pk_str != "Hello") return {0, 0};
     __int128 pk = str_to_int128(s.substr(pos+1));
-    cout << "Received pk: ";
-    print128(pk);
-    cout << endl;
+    // cout << "Received pk: ";
+    // print128(pk);
+    // cout << endl;
     return {1, pk};
 }
-
-// Global variables
-const string INVALID_STRING = "INVALID";
-const string OK_STRING = "OK";\
-int return_val = 0;
-
-#define N_G 1024 // Power of 2
-#define P_S 100 // Even number of users at a time
-#define PK_LST_SIZE 16384 // Vary depending on the need (N_G)
-#define MAX_PRIME_VAL 99999999999 // Vary depending on the need (N_G)
-__int128 Primitive_root = 1165819352762;
-__int128 Prime = 9999999998977;
 
 string to_string(__int128 x) {
     if (x == 0) return "0";
@@ -291,12 +291,12 @@ int process_received_masked_value(char* buffer, vector<__int128>& evaluation_poi
         evaluation_points[i-2] = (masked_value + evaluation_points[i-2]) % Prime;
     }
 
-    cout << "Received masked value: ";
-    for(int i = 0; i < N_G; i++){
-        print128(evaluation_points[i]);
-        cout << " ";
-    }
-    cout << endl;
+    // cout << "Received masked value: ";
+    // for(int i = 0; i < N_G; i++){
+    //     print128(evaluation_points[i]);
+    //     cout << " ";
+    // }
+    // cout << endl;
 
     return 0;
 
@@ -316,12 +316,12 @@ int public_key_broadcast_n_polynomial_generation(map<__int128, pair<__int128,__i
     }
 
     int ind = 0;
-    cout << "Broadcasting to clients: " << pk_lst_str << endl;
+    // cout << "Broadcasting to clients: " << pk_lst_str << endl;
     for (const auto& client : client_map) {
         __int128 client_fd = client.first;
-        cout << "Sending to client fd: ";
-        print128(client_fd);
-        cout << endl;
+        // cout << "Sending to client fd: ";
+        // print128(client_fd);
+        // cout << endl;
         string ind_str = " " + to_string(ind);
         ind++;
         return_val = send(client_fd, (pk_lst_str + ind_str).c_str(), pk_lst_str.size()+ind_str.size(), 0);
@@ -370,14 +370,14 @@ int public_key_broadcast_n_polynomial_generation(map<__int128, pair<__int128,__i
                 char buffer[PK_LST_SIZE] = {0};
                 int valread = read(client_fd, buffer, sizeof(buffer));
                 if (valread == 0) {
-                    cout << "Client disconnected: socket fd = ";
-                    print128( client_fd);
-                    cout << endl;
+                    // cout << "Client disconnected: socket fd = ";
+                    // print128( client_fd);
+                    // cout << endl;
                     // close(client_fd);
                     temp_user_fds.push_back(client_fd);
                     continue;
                 } else {
-                    cout << "Received from client " << buffer << endl;
+                    // cout << "Received from client " << buffer << endl;
                     int stats = process_received_masked_value(buffer, evaluation_points);
                     if(stats != 0){
                         cout << "Error processing masked value" << endl;
@@ -394,14 +394,14 @@ int public_key_broadcast_n_polynomial_generation(map<__int128, pair<__int128,__i
         }
     }
 
-    cout << "Sum of Received evaluation points: ";
+    // cout << "Sum of Received evaluation points: ";
 
-    for(int i = 0; i < N_G; i++){
-        print128(evaluation_points[i]);
-        cout << " ";
-    }
-    cout << endl;
-    cout << "Polynomial generation..." << endl;
+    // for(int i = 0; i < N_G; i++){
+    //     print128(evaluation_points[i]);
+    //     cout << " ";
+    // }
+    // cout << endl;
+    // cout << "Polynomial generation..." << endl;
 
     NTT ntt(Primitive_root, Prime); // Placeholder for NTT object
 
@@ -508,9 +508,9 @@ int main(){
                 continue;
             }
 
-            std::cout << "New connection: socket fd = ";
-            print128(new_socket);
-            cout<<endl;
+            // std::cout << "New connection: socket fd = ";
+            // print128(new_socket);
+            // cout<<endl;
             client_sockets.push_back(new_socket);
             
             // std::cout << "Client ID: ";
@@ -535,7 +535,7 @@ int main(){
                         client_map.erase(sd);
                     }
                 } else {
-                    std::cout << "Received from fd " << sd << ": " << buffer << std::endl;
+                    // std::cout << "Received from fd " << sd << ": " << buffer << std::endl;
                     auto t = process_received_pk(buffer);
                     if(t.first == 0){
                         if(client_map.find(sd) != client_map.end()){
@@ -549,11 +549,11 @@ int main(){
                     }
                     client_map[sd] = {client_id, t.second};
                     client_id++;
-                    cout << "Client ID: ";
-                    print128(client_map[sd].first);
-                    cout << ", pk: ";
-                    print128(client_map[sd].second);
-                    cout<< endl;
+                    // cout << "Client ID: ";
+                    // print128(client_map[sd].first);
+                    // cout << ", pk: ";
+                    // print128(client_map[sd].second);
+                    // cout<< endl;
                     send(sd, OK_STRING.c_str(), OK_STRING.size(), 0); // Echo
                 }
             }
