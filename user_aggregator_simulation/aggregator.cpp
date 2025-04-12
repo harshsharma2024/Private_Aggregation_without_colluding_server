@@ -239,7 +239,7 @@ const string INVALID_STRING = "INVALID";
 const string OK_STRING = "OK";\
 int return_val = 0;
 
-#define N_G 64 // Power of 2
+#define N_G 1024 // Power of 2
 #define P_S 100 // Even number of users at a time
 #define PK_LST_SIZE 16384 // Vary depending on the need (N_G)
 #define MAX_PRIME_VAL 99999999999 // Vary depending on the need (N_G)

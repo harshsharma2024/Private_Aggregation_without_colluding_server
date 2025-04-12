@@ -4,7 +4,14 @@
 #include <unistd.h>
 #include <cstring>
 #include <random>
+#include <chrono>
+using namespace std::chrono;
 using namespace std;
+
+#define N_G 1024 // Power of 2
+#define P_S 100 // Even number of users at a time
+#define PK_LST_SIZE 16384
+#define MAX_PRIME_VAL 99999999999 // Vary depending on the need (N_G)
 
 
 using int128 = __int128;
@@ -70,11 +77,6 @@ string to_string(__int128 x) {
     reverse(result.begin(), result.end());
     return result;
 }
-
-#define N_G 64 // Power of 2
-#define P_S 100 // Even number of users at a time
-#define PK_LST_SIZE 16384
-#define MAX_PRIME_VAL 99999999999 // Vary depending on the need (N_G)
 
 class PrimeHelper {
     public:
@@ -340,6 +342,9 @@ int main() {
     mt19937_64 gen(rd());
     uniform_int_distribution<int128> dis(0, N_G - 1);
     uniform_int_distribution<int128> dis2(0, prime - 1);
+    
+    auto strt = high_resolution_clock::now();
+    
     for (int i = 0; i < P_S; i++) {
         int128 gid = dis(gen);
         cout<<"GID: ";
@@ -355,6 +360,11 @@ int main() {
     for (auto& th : threads) {
         th.join();
     }
+
+    auto en = high_resolution_clock::now();
+
+    auto duration = duration_cast<milliseconds>(en-strt);
+    cout << "Time taken: " << duration.count() << " milliseconds" << endl;
 
     return 0;
 }
