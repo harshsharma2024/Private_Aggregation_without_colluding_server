@@ -11,9 +11,9 @@ using namespace chrono;
 
 
 
-
-#define N_G 1024 // Power of 2
-#define P_S 4 // Even number of users at a time
+// TODO : remove dependence on this N_G
+#define N_G 16384 // Power of 2
+// #define P_S 4 // Even number of users at a time
 #define PK_LST_SIZE 32768
 #define MAX_PRIME_VAL 999999999999 // Vary depending on the need (N_G)
 using int128 = __int128;
@@ -355,243 +355,68 @@ int32_t bytes_to_int32(const uint8_t* data) {
     return val;
 }
 
-std::pair<int128, std::vector<int128>> extract_pk_list(uint8_t* buffer, size_t len) {
-    std::vector<int128> pk_list;
 
-    // Minimum size: 2(header) + 4(count) + 4(index)
-    if (len < 10) {
-        return {-1, pk_list};
-    }
-
-    // Check header
-    if (buffer[0] != 'P' || buffer[1] != 'L') {
-        return {-1, pk_list};
-    }
-
-    // Number of pks
-    int32_t pk_sz = bytes_to_int32(buffer + 2);
-
-    // Expected length = 2 + 4 + pk_sz*16 + 4
-    size_t expected_len = 2 + 4 + pk_sz * 16 + 4;
-    if (len < expected_len) {
-        return {-1, pk_list};
-    }
-
-    // Extract pk list
-    size_t offset = 6;
-    for (int i = 0; i < pk_sz; i++) {
-        int128 pk = bytes_to_int128(buffer + offset);
-        pk_list.push_back(pk);
-        offset += 16;
-    }
-
-    // Extract self index (last 4 bytes)
-    int128 index_self_pk = bytes_to_int32(buffer + offset);
-
-    return {index_self_pk, pk_list};
-}
-
-
-void communicate_with_server(User user) {
-    int sockfd;
-    sockaddr_in server_addr{};
-
-    chrono::high_resolution_clock::time_point start, end;
-    start = high_resolution_clock::now();
-
-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (sockfd < 0) {
-        perror("Socket creation failed");
-        return;
-    }
-
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(8111);
-    inet_pton(AF_INET, "127.0.0.1", &server_addr.sin_addr);
-
-    if (connect(sockfd, (sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
-        perror("Connection failed with server");
-        return;
-    }
-
-    // string message = "Hello ";
-    // message += to_string(user.pk);  // Assuming getter exists
-    // send(sockfd, message.c_str(), message.size(), 0);
-
-    uint8_t single_pk_buffer[18];
-    single_pk_buffer[0] = 'H';
-    single_pk_buffer[1] = 'E';
-    auto pk = user.pk;
-    for(int i = 0;i<16;i++){
-        single_pk_buffer[17-i] = static_cast<uint8_t>(pk & 0xFF);
-        pk >>= 8;
-    }
-
-    send(sockfd, single_pk_buffer, sizeof(single_pk_buffer), 0);
-
-    // char buffer[1024] = {0};
-    // int bytes_read = read(sockfd, buffer, sizeof(buffer));
-    // string reply(buffer, bytes_read);
-    // //cout << "Server reply: " << reply << "\n";
-
-    // if (reply != "OK") {
-    //     //cout << "Invalid response" << endl;
-    //     exit_the_process(sockfd);
-    //     return;
-    // }
-
-    uint8_t recv_pk_list[PK_LST_SIZE] = {0};
-    int bytes_read_pk_list = read(sockfd, recv_pk_list, sizeof(recv_pk_list));
-
-    if(is_pk_lst_print){
-
-        cout<<"Pk list received : "<<bytes_read_pk_list<<endl;
-        is_pk_lst_print = 0;
-    }
-    // string pk_data(recv_pk_list, bytes_read_pk_list);
-    // //cout << "Received pk list: " << pk_data << "\n";
-    end = high_resolution_clock::now();
-    auto duration = duration_cast<milliseconds>(end - start);
-    time_data_glob.network_time += duration.count();
-
-    start = high_resolution_clock::now();
-    auto res_pk_list = extract_pk_list(recv_pk_list, bytes_read_pk_list);
-    if (res_pk_list.second.empty() || res_pk_list.first == -1) {
-        //cout << "Invalid pk list" << endl;
-        exit_the_process(sockfd);
-        return;
-    }
-
-    auto pk_list = res_pk_list.second;
-    int128 p_s = pk_list.size();
-    int128 index_self_pk = res_pk_list.first;
-    end = high_resolution_clock::now();
-    duration = duration_cast<milliseconds>(end - start);
-    time_data_glob.pk_lst_extraction_time += duration.count();
-
-    start = high_resolution_clock::now();
-    int stats = user.create_mask(pk_list, p_s, index_self_pk);
-    if (stats != 0) {
-        //cout << "Error creating mask" << endl;
-        exit_the_process(sockfd);
-        return;
-    }
-    end = high_resolution_clock::now();
-    duration = duration_cast<milliseconds>(end - start);
-    time_data_glob.mask_gen_time += duration.count();
-
-    start = high_resolution_clock::now();
-    auto masked_values = user.get_masked_value_representation();
-    if (masked_values.empty()) {
-        //cout << "Error getting masked values" << endl;
-        exit_the_process(sockfd);
-        return;
-    }
-    end = high_resolution_clock::now();
-    duration = duration_cast<milliseconds>(end - start);
-    time_data_glob.mask_gen_evaluation_time += duration.count();
-    // string value_representation_str = "masked_points " + to_string(masked_values.size());
-
-    size_t packet_size = 2 + 4 + masked_values.size() * 16;
-    uint8_t value_representation_uint[packet_size];
-    value_representation_uint[0] = 'M';
-    value_representation_uint[1] = 'P';
-
-    int32_t count = masked_values.size();
-    for (int i = 0; i < 4; i++) {
-        value_representation_uint[5 - i] = static_cast<uint8_t>(count & 0xFF);
-        count >>= 8;
-    }
-
-    // Write masked values
-    size_t offset = 6;
-    for (auto val : masked_values) {
-        for (int i = 0; i < 16; i++) {
-            value_representation_uint[offset + 15 - i] = static_cast<uint8_t>(val & 0xFF);
-            val >>= 8;
+class NTT {
+    public:
+        __int128 p; // prime modulus
+        __int128 g; // primitive root
+    
+        NTT(__int128 prime, __int128 root) : p(prime), g(root) {}
+    
+        // Modular inverse using Fermat’s little theorem
+        __int128 modinv(__int128 a, __int128 mod) {
+            return modpow(a, mod - 2, mod);
         }
-        offset += 16;
-    }
-
-    // Send packet
-    start = high_resolution_clock::now();
-    ssize_t sent = send(sockfd, value_representation_uint, sizeof(value_representation_uint), 0);
-    if (sent <= 0) {
-        // error handling
-        exit_the_process(sockfd);
-    }
-
-    if(is_masked_print){
-        cout<<"Masked data sent: "<<sizeof(value_representation_uint)<<endl;
-        is_masked_print = 0;
-    }
-    // start = high_resolution_clock::now();
-    // for (auto& val : masked_values) {
-    //     value_representation_str += " " + to_string(val);
-    // }
-
-    // send(sockfd, value_representation_str.c_str(), value_representation_str.size(), 0);
-    end = high_resolution_clock::now();
-    duration = duration_cast<milliseconds>(end - start);
-    time_data_glob.network_time += duration.count();
-    //cout << "Sent masked values to server\n";
-
-    close(sockfd);
-}
-
-int main() {
-    PrimeHelper prime_helper;
-    int128 prime = prime_helper.find_prime_for_polynomial(N_G, MAX_PRIME_VAL);
-    int128 primitive_root = prime_helper.find_primitive_nth_root(prime, N_G);
-
-    // __int128 primitive_root = 1165819352762;
-    // __int128 prime = 9999999998977;
-
-
-    cout << "Prime: ";
-    print128(prime);
-    cout << ", Primitive root: ";
-    print128(primitive_root);
-    cout << endl;
-
-    // return 0;
-    vector<thread> threads;
-    random_device rd;
-    mt19937_64 gen(rd());
-    uniform_int_distribution<int128> dis(0, N_G - 1);
-    uniform_int_distribution<int128> dis2(0, prime - 1);
     
-    auto strt = high_resolution_clock::now();
+        // Recursive Cooley-Tukey NTT
+        vector<__int128> ntt_cooley_tukey(const vector<__int128>& x, __int128 p, __int128 g) {
+            size_t N = x.size();
+            if (N == 1)
+                return x;
     
-    for (int i = 0; i < P_S; i++) {
-        int128 gid = dis(gen);
-        //cout<<"GID: ";
-        // print128(gid);
-        //cout<<endl;
-        int128 sk = dis2(gen); // change sk per user
-        int128 pk = modpow(primitive_root, sk, prime);
-        User user(gid, sk, pk, N_G, primitive_root, prime);
-
-        threads.emplace_back(communicate_with_server, user);
-    }
-
-    for (auto& th : threads) {
-        th.join();
-    }
-
-    auto en = high_resolution_clock::now();
-
-    auto duration = duration_cast<milliseconds>(en-strt);
-    //cout << "Time taken: " << duration.count() << " milliseconds" << endl;
-    time_data_glob.total_time = duration.count();
-
-    cout<<" PRG time: "<<time_data_glob.prg_time/P_S<<endl;
-    // cout<<"Total PRG time: "<<time_data_glob.prg_time<<endl;
-    cout<<" Mask generation time: "<<time_data_glob.mask_gen_time/P_S<<endl;
-    cout<<" Network time: "<<time_data_glob.network_time/P_S<<endl;
-    cout<<" Mask generation evaluation time: "<<time_data_glob.mask_gen_evaluation_time/P_S<<endl;
-    cout<<" PK list extraction time: "<<time_data_glob.pk_lst_extraction_time/P_S<<endl;
-    cout<<" Total time: "<<time_data_glob.total_time<<endl;
-
-    return 0;
-}
+            vector<__int128> evenPart(N / 2), oddPart(N / 2);
+            for (size_t i = 0; i < N / 2; ++i) {
+                evenPart[i] = x[2 * i];
+                oddPart[i] = x[2 * i + 1];
+            }
+    
+            evenPart = ntt_cooley_tukey(evenPart, p, (g * g) % p);
+            oddPart = ntt_cooley_tukey(oddPart, p, (g * g) % p);
+    
+            vector<__int128> result(N);
+            __int128 factor = 1;
+    
+            for (size_t i = 0; i < N / 2; ++i) {
+                __int128 term = (factor * oddPart[i]) % p;
+                result[i] = (evenPart[i] + term) % p;
+                result[i + N / 2] = (evenPart[i] - term + p) % p;
+                factor = (factor * g) % p;
+            }
+    
+            return result;
+        }
+    
+        // Inverse NTT
+        vector<__int128> inverse_ntt(const vector<__int128>& x, __int128 p, __int128 g) {
+            size_t N = x.size();
+            __int128 g_inv = modinv(g, p);
+            // //cout << "g_inv: ";
+            // print128(g_inv);
+            // //cout<<" ";
+            // print128(g);
+            // //cout<<" ";
+            // print128(p);
+            // //cout << endl;
+            vector<__int128> y = ntt_cooley_tukey(x, p, g_inv);
+            // //cout << "NTT result: ";
+            // for(auto i : y){
+            //     print128(i);
+            //     //cout << " ";
+            // }
+            __int128 inv_N = modinv(N, p);
+            for (size_t i = 0; i < N; ++i) {
+                y[i] = (y[i] * inv_N) % p;
+            }
+            return y;
+        }
+    };

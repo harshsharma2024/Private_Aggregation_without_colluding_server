@@ -9,3 +9,95 @@
 
 Aggregator: 
 
+
+
+IBEX
+
+for 1<<14 : 
+
+> ./aggregator_micro_test -d 14 -t 10
+(avg) browser generate share (ms): 0.0005813
+(avg) aux server encrypts share (ms): 16.6008
+(avg) aux server decrypts aggregation result (ms): 1.97976
+(avg) main server recovers report (ms): 0.82375
+(avg) main server aggregates reports (ms): 0.221075
+(avg) size of encrypted share by aux server: 0.663094 (MB)
+(avg) size of encrypted report: 0.66248 (MB)
+
+> wrk2 -t1 -c1 -d20s -R1 -s g14.lua --latency http://127.0.0.1:8000
+
+Running 20s test @ http://127.0.0.1:8000
+  1 threads and 1 connections
+  Thread calibration: mean lat.: 5.790ms, rate sampling interval: 15ms
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     4.57ms    0.96ms   5.78ms   55.56%
+    Req/Sec     0.92      7.79    71.00     98.64%
+  Latency Distribution (HdrHistogram - Recorded Latency)
+ 50.000%    4.92ms
+ 75.000%    5.25ms
+ 90.000%    5.55ms
+ 99.000%    5.78ms
+ 99.900%    5.78ms
+ 99.990%    5.78ms
+ 99.999%    5.78ms
+100.000%    5.78ms
+
+  Detailed Percentile spectrum:
+       Value   Percentile   TotalCount 1/(1-Percentile)
+
+       2.845     0.000000            1         1.00
+       2.845     0.100000            1         1.11
+       3.601     0.200000            2         1.25
+       3.765     0.300000            3         1.43
+       4.135     0.400000            4         1.67
+       4.919     0.500000            5         2.00
+       4.919     0.550000            5         2.22
+       5.251     0.600000            7         2.50
+       5.251     0.650000            7         2.86
+       5.251     0.700000            7         3.33
+       5.251     0.750000            7         4.00
+       5.251     0.775000            7         4.44
+       5.555     0.800000            8         5.00
+       5.555     0.825000            8         5.71
+       5.555     0.850000            8         6.67
+       5.555     0.875000            8         8.00
+       5.555     0.887500            8         8.89
+       5.783     0.900000            9        10.00
+       5.783     1.000000            9          inf
+#[Mean    =        4.567, StdDeviation   =        0.957]
+#[Max     =        5.780, Total count    =            9]
+#[Buckets =           27, SubBuckets     =         2048]
+----------------------------------------------------------
+  21 requests in 20.01s, 21.00MB read
+Requests/sec:      1.05
+Transfer/sec:      1.05MB
+
+> ./aggregator_micro_test -d 15 -t 10           
+(avg) browser generate share (ms): 0.0005928
+(avg) aux server encrypts share (ms): 28.5263
+(avg) aux server decrypts aggregation result (ms): 4.16802
+(avg) main server recovers report (ms): 1.60354
+(avg) main server aggregates reports (ms): 0.464474
+(avg) size of encrypted share by aux server: 1.34537 (MB)
+(avg) size of encrypted report: 1.34488 (MB)
+
+
+
+
+> ./aggregator_micro_test -d 10 -t 10
+(avg) browser generate share (ms): 0.0005546
+(avg) aux server encrypts share (ms): 6.01153
+(avg) aux server decrypts aggregation result (ms): 0.11284
+(avg) main server recovers report (ms): 0.131319
+(avg) main server aggregates reports (ms): 0.012338
+(avg) size of encrypted share by aux server: 0.0339499 (MB)
+(avg) size of encrypted report: 0.0334482 (MB)
+
+
+Time taken(ms) for mask generation for client with partition size 100 and group size 1024 : 8.1
+time taken by server for mask aggregation and polynomial generation for partition size 100 group size 1024 : 1
+
+Time taken(ms) for mask generation for client with partition size 100 and group size 16384 : 151
+Size of the pk list that has to be sent: 0.00152588 MB
+time taken by server for mask aggregation and polynomial generation for partition size 100 group size 16384 : 19
+size of the mask list to be sent from clien to server : 0.25 MB

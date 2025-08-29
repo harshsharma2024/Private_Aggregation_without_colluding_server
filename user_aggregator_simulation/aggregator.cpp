@@ -29,12 +29,15 @@ const string INVALID_STRING = "INVALID";
 const string OK_STRING = "OK";\
 int return_val = 0;
 
-#define N_G 128 // Power of 2
-#define P_S 140 // Even number of users at a time
-#define PK_LST_SIZE 16384 // Vary depending on the need (N_G)
-#define MAX_PRIME_VAL 99999999999 // Vary depending on the need (N_G)
+#define N_G 1024 // Power of 2
+#define P_S 4 // Even number of users at a time
+#define PK_LST_SIZE 32768 // Vary depending on the need (N_G)
+#define MAX_PRIME_VAL 999999999999 // Vary depending on the need (N_G)
 __int128 Primitive_root = 1165819352762;
 __int128 Prime = 9999999998977;
+
+// __int128 Primitive_root = 56855733481808;
+// __int128 Prime = 99999999541249;
 
 __int128 str_to_int128(const string& s) {
     __int128 result = 0;
@@ -249,16 +252,20 @@ void test(){
     //cout << endl;
 }
 
-pair<__int128,__int128> process_received_pk(char* buffer){
-    string s(buffer);
-    __int128 pos = s.find(" ");
-    if(pos == string::npos) return {0, 0};
-    string pk_str = s.substr(0, pos);
-    if(pk_str != "Hello") return {0, 0};
-    __int128 pk = str_to_int128(s.substr(pos+1));
-    // //cout << "Received pk: ";
-    // print128(pk);
-    // //cout << endl;
+pair<__int128, __int128> process_received_pk(const char* buffer) {
+    // Expect "HE" header
+    if (buffer[0] != 'H' || buffer[1] != 'E') {
+        return {0, 0}; // invalid header
+    }
+
+    // Parse 16 bytes into __int128 (big-endian)
+    __int128 pk = 0;
+    for (int i = 2; i < 18; i++) {
+        pk <<= 8;
+        pk |= static_cast<unsigned char>(buffer[i]);
+    }
+
+    // return {1, pk} where 1 = "valid"
     return {1, pk};
 }
 
@@ -273,50 +280,100 @@ string to_string(__int128 x) {
     return result;
 }
 
-int process_received_masked_value(char* buffer, vector<__int128>& evaluation_points){
-    string s(buffer);
-    vector<string> tokens;
-    string temp = "";
-    for(auto i : s){
-        if(i == ' '){
-            tokens.push_back(temp);
-            temp = "";
-        } else {
-            temp += i;
-        }
-    }
-    if(!temp.empty()){
-        tokens.push_back(temp);
-    }
-    if(tokens.size() < 2 || tokens[0] != "masked_points"){
-        //cout << "Invalid masked value packet" << endl;
+
+int process_received_masked_value(uint8_t* buffer, size_t len, std::vector<__int128>& evaluation_points) {
+    // Minimum size: 2(header) + 4(count)
+    if (len < 6) {
         return -1;
-    }
-    int sz = tokens.size();
-    int masked_points_sz = str_to_int128(tokens[1]);
-    if(sz-2 != masked_points_sz){
-        //cout << "Masked points size does not match" << endl;
-        return -1;
-    }
-    if(sz-2 != N_G){
-        //cout << "Masked points size does not match N_G" << endl;
-        return -1;
-    }
-    for(int i = 2; i < sz; i++){
-        __int128 masked_value = str_to_int128(tokens[i]);
-        evaluation_points[i-2] = (masked_value + evaluation_points[i-2]) % Prime;
     }
 
-    // //cout << "Received masked value: ";
-    // for(int i = 0; i < N_G; i++){
-    //     print128(evaluation_points[i]);
-    //     //cout << " ";
-    // }
-    // //cout << endl;
+    // Check header
+    if (buffer[0] != 'M' || buffer[1] != 'P') {
+        return -1;
+    }
+
+    // Read count
+    int32_t masked_points_sz = 0;
+    for (int i = 0; i < 4; i++) {
+        masked_points_sz <<= 8;
+        masked_points_sz |= buffer[2 + i];
+    }
+
+    // Expected length
+    size_t expected_len = 2 + 4 + masked_points_sz * 16;
+    // cout<<expected_len<<" "<<len<<endl;
+    if (len < expected_len) {
+        return -1;
+    }
+
+    
+
+    // Check against N_G
+    if (masked_points_sz != N_G) {
+        return -1;
+    }
+
+    // Parse masked values
+    size_t offset = 6;
+    for (int i = 0; i < masked_points_sz; i++) {
+        __int128 masked_value = 0;
+        for (int j = 0; j < 16; j++) {
+            masked_value <<= 8;
+            masked_value |= buffer[offset + j];
+        }
+
+        evaluation_points[i] = (masked_value + evaluation_points[i]) % Prime;
+        offset += 16;
+    }
 
     return 0;
-
 }
+
+
+// int process_received_masked_value(char* buffer, vector<__int128>& evaluation_points){
+//     string s(buffer);
+//     vector<string> tokens;
+//     string temp = "";
+//     for(auto i : s){
+//         if(i == ' '){
+//             tokens.push_back(temp);
+//             temp = "";
+//         } else {
+//             temp += i;
+//         }
+//     }
+//     if(!temp.empty()){
+//         tokens.push_back(temp);
+//     }
+//     if(tokens.size() < 2 || tokens[0] != "masked_points"){
+//         //cout << "Invalid masked value packet" << endl;
+//         return -1;
+//     }
+//     int sz = tokens.size();
+//     int masked_points_sz = str_to_int128(tokens[1]);
+//     if(sz-2 != masked_points_sz){
+//         //cout << "Masked points size does not match" << endl;
+//         return -1;
+//     }
+//     if(sz-2 != N_G){
+//         //cout << "Masked points size does not match N_G" << endl;
+//         return -1;
+//     }
+//     for(int i = 2; i < sz; i++){
+//         __int128 masked_value = str_to_int128(tokens[i]);
+//         evaluation_points[i-2] = (masked_value + evaluation_points[i-2]) % Prime;
+//     }
+
+//     // //cout << "Received masked value: ";
+//     // for(int i = 0; i < N_G; i++){
+//     //     print128(evaluation_points[i]);
+//     //     //cout << " ";
+//     // }
+//     // //cout << endl;
+
+//     return 0;
+
+// }
 
 int public_key_broadcast_n_polynomial_generation(map<__int128, pair<__int128,__int128>>& client_map, __int128 server_fd) {
     //cout << "Broadcasting public key and polynomial generation..." << endl;
@@ -328,10 +385,27 @@ int public_key_broadcast_n_polynomial_generation(map<__int128, pair<__int128,__i
     int pk_sz = client_map.size();
     pk_lst_str += to_string(pk_sz);
 
+    uint8_t pk_lst_uint[2 + 4 + client_map.size()*16 + 4];
+
+    pk_lst_uint[0] = 'P';
+    pk_lst_uint[1] = 'L';
+
+    // Storing the size of client map in pk_lst_uint
+    for(int i = 0;i<4;i++){
+        pk_lst_uint[5-i] = static_cast<uint8_t>(pk_sz & 0xFF);
+        pk_sz >>= 8;
+    }
+
+    int temp_cnt = 1;
     for (const auto& client : client_map) {
         __int128 client_fd = client.first;
         __int128 pk = client.second.second;
-        pk_lst_str += " " + to_string(pk);
+        // pk_lst_str += " " + to_string(pk);
+        for(int i = 0;i<16;i++){
+            pk_lst_uint[6 + 16*(temp_cnt) - i - 1] = static_cast<uint8_t>(pk & 0xFF);
+            pk >>= 8;
+        }
+        temp_cnt++;
     }
 
     int ind = 0;
@@ -341,9 +415,15 @@ int public_key_broadcast_n_polynomial_generation(map<__int128, pair<__int128,__i
         // //cout << "Sending to client fd: ";
         // print128(client_fd);
         // //cout << endl;
-        string ind_str = " " + to_string(ind);
+        // string ind_str = " " + to_string(ind);
+        int temp_cnt_ind = ind;
+        for(int i = 0;i<4;i++){
+            pk_lst_uint[sizeof(pk_lst_uint)-1-i] = static_cast<uint8_t>(temp_cnt_ind & 0xFF);
+            temp_cnt_ind >>= 8;
+        }
+
         ind++;
-        return_val = send(client_fd, (pk_lst_str + ind_str).c_str(), pk_lst_str.size()+ind_str.size(), 0);
+        return_val = send(client_fd, pk_lst_uint, sizeof(pk_lst_uint), 0);
         if (return_val <= 0) {
             //cout << "Error sending pk list to client fd: ";
             print128(client_fd);
@@ -366,6 +446,7 @@ int public_key_broadcast_n_polynomial_generation(map<__int128, pair<__int128,__i
     fd_set readfds;
     __int128 max_sd = server_fd;
     
+    uint8_t buffer[PK_LST_SIZE] = {0};
     while(true){
         if(client_map.size() == 0){
             //cout << "No clients connected, exiting..." << endl;
@@ -391,7 +472,7 @@ int public_key_broadcast_n_polynomial_generation(map<__int128, pair<__int128,__i
             __int128 client_fd = client.first;
             if (FD_ISSET(client_fd, &readfds)) {
                 start = chrono::high_resolution_clock::now();
-                char buffer[PK_LST_SIZE] = {0};
+                memset(buffer, 0, sizeof(buffer));
                 int valread = read(client_fd, buffer, sizeof(buffer));
                 end = chrono::high_resolution_clock::now();
                 duration = chrono::duration_cast<chrono::milliseconds>(end - start);
@@ -406,12 +487,12 @@ int public_key_broadcast_n_polynomial_generation(map<__int128, pair<__int128,__i
                 } else {
                     // //cout << "Received from client " << buffer << endl;
                     start = chrono::high_resolution_clock::now();
-                    int stats = process_received_masked_value(buffer, evaluation_points);
+                    int stats = process_received_masked_value(buffer,valread, evaluation_points);
                     end = chrono::high_resolution_clock::now();
                     duration = chrono::duration_cast<chrono::milliseconds>(end - start);
                     time_data.masking_process_time += duration.count();
                     if(stats != 0){
-                        //cout << "Error processing masked value" << endl;
+                        cout << "Error processing masked value" << endl;
                         close(client_fd);
                         continue;
                     }
@@ -456,10 +537,10 @@ int public_key_broadcast_n_polynomial_generation(map<__int128, pair<__int128,__i
     }
     //cout<<endl;
     if(sum == P_S){
-        //cout<<"Generated Polynomial verified"<<endl;
+        cout<<"Generated Polynomial verified"<<endl;
     }
     else{
-        //cout<<"Generated polynomial Sum did not match, some issue!!"<<endl;
+        cout<<"Generated polynomial Sum did not match, some issue!!"<<endl;
     }
 
     //cout << endl;
@@ -614,7 +695,7 @@ int main(){
                     // //cout << ", pk: ";
                     // print128(client_map[sd].second);
                     // //cout<< endl;
-                    send(sd, OK_STRING.c_str(), OK_STRING.size(), 0); // Echo
+                    // send(sd, OK_STRING.c_str(), OK_STRING.size(), 0); // Echo
                 }
             }
         }
